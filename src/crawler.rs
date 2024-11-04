@@ -31,10 +31,15 @@ impl Crawler {
 
             let html = Html::parse_document(&page.get_html());
             let body = html
-                .select(&Selector::parse("body").unwrap())
-                .next()
-                .expect("something's pretty wrong")
-                .inner_html();
+                .select(&Selector::parse("p, h1, h2, h3, h4").unwrap())
+                .map(|elem| {
+                    elem
+                .text()
+                .collect::<Vec<_>>()
+                .join(" ")
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
             let title = html
                 .select(&Selector::parse("title").unwrap())
                 .next()

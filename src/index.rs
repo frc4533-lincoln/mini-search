@@ -17,8 +17,8 @@ impl SearchIndex {
 
         let url = schema.add_text_field("url", TEXT | FAST | STORED);
         let title = schema.add_text_field("title", TEXT | FAST | STORED);
-        let body = schema.add_text_field("body", TEXT | STORED);
-        let embedding = schema.add_bytes_field("embedding", STORED);
+        let body = schema.add_text_field("body", TEXT | FAST | STORED);
+        let embedding = schema.add_bytes_field("embedding", FAST | STORED);
 
         let schema = schema.build();
 

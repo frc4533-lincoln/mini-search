@@ -2,14 +2,26 @@
 <html>
 	<head>
 		<title>Mini Search</title>
+		<style>
+			html {
+				font-family: sans-serif;
+			}
+			body {
+				padding: 0pt 24pt 0pt 24pt;
+			}
+			h1>a {
+				color: purple;
+				text-decoration: none;
+			}
+		</style>
 	</head>
 	<body>
-		<h1>Mini Search</h1>
+		<h1><a href="/">Mini Search</a></h1>
 		<form>
-			<input type="search" id="search" name="q" value="{{ query }}" />
+			<input type="search" id="search" name="q" value="{% if query %}{{ query }}{% endif %}" />
 			<input type="submit" value="Search" />
 		</form>
-		{% if time %}
+		{% if results %}
 			<p>{{ time }}</p>
 
 			<hr>
@@ -18,6 +30,10 @@
 				<h3><a href="{{ doc.url }}">{{ doc.title }}</a></h3>
 				<p>{{ doc.snippet | safe }}</p>
 			{% endfor %}
+		{% else %}
+			{% if query %}
+				<h3>No results found. :(</h3>
+			{% endif %}
 		{% endif %}
 	</body>
 </html>

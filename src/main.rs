@@ -47,9 +47,19 @@ struct SearchRes {
     time: String,
 }
 
+#[derive(Deserialize, Serialize)]
+struct MiniDoc {
+    url: String,
+    title: String,
+    body: String,
+    embedding: Vec<u8>,
+}
+
 async fn search(State(st): State<AppState>, Query(params): Query<SearchParams>) -> impl IntoResponse {
     if let Some(q) = params.query {
         let AppState { reader, parser, schema, templates, se } = st;
+        let mut templates = templates.clone();
+        templates.full_reload().unwrap();
 
         let total_st = Instant::now();
 
@@ -74,37 +84,46 @@ async fn search(State(st): State<AppState>, Query(params): Query<SearchParams>) 
 
         let mut results = Vec::new();
 
-        for (_, doc_addr) in results_raw {
+        let snippet_gen = SnippetGenerator::create(&searcher, &query, schema.get_field("body").unwrap()).unwrap();
+        let garbage_st = Instant::now();
+        let docs_with_embeddings = results_raw.iter().map(|&(_, doc_addr)| {
             let doc = searcher.doc::<TantivyDocument>(doc_addr).expect("couldn't get doc");
             let embedding = doc.get_first(schema.get_field("embedding").unwrap()).unwrap().as_bytes().unwrap();
             let embedding = unsafe {
                 std::slice::from_raw_parts(embedding.as_ptr() as *const f32, embedding.len() / 4).to_vec()
             };
             
-            let url = doc.get_first(schema.get_field("url").unwrap()).unwrap().as_str().unwrap().to_string();
-            let title = doc.get_first(schema.get_field("title").unwrap()).unwrap().as_str().unwrap().to_string();
-            let snippet = SnippetGenerator::create(&searcher, &query, schema.get_field("body").unwrap()).unwrap().snippet_from_doc(&doc).to_html();
-
-            results.push((embedding.clone(), Res {
-                url,
-                title,
-                snippet,
-            }));
-        }
+            (embedding.clone(), doc)
+        }).collect::<Vec<_>>();
+        let garbage_tm = garbage_st.elapsed();
 
         let (embedding, embedding_gen_tm) = jh.await.expect("something broke");
 
         let sort_st = Instant::now();
-        se.lock().await.sort_by_similarity(embedding.unwrap(), results.iter().map(|x| x.0.clone())).unwrap();
+        let scores = se.lock().await.sort_by_similarity(embedding.unwrap(), docs_with_embeddings.iter().map(|x| x.0.clone())).unwrap();
+        for &(i, score) in scores.iter().take(10) {
+            let doc = docs_with_embeddings.get(i).unwrap().1.clone();
+
+            let url = doc.get_first(schema.get_field("url").unwrap()).unwrap().as_str().unwrap().to_string();
+            let title = doc.get_first(schema.get_field("title").unwrap()).unwrap().as_str().unwrap().to_string();
+            let snippet = snippet_gen.snippet_from_doc(&doc).to_html();
+
+            results.push(Res {
+                url,
+                title,
+                snippet,
+            });
+        }
+
         let sort_tm = sort_st.elapsed();
 
         let total_tm = total_st.elapsed();
 
         Html(templates.render("index.html", &Context::from_serialize(SearchRes {
             query: q,
-            results: Vec::from_iter(results.iter().map(|x| x.1.clone())),
+            results,
             time: format!(
-                "{total_tm:?} = parse({parse_tm:?}) + search({search_tm:?}) + embedding({embedding_gen_tm:?}) + sort({sort_tm:?})",
+                "{total_tm:?} = parse({parse_tm:?}) + search({search_tm:?}) + garbage({garbage_tm:?}) + embedding({embedding_gen_tm:?}) + sort({sort_tm:?})",
                 //(parse_tm + search_tm + embedding_gen_tm + sort_tm)
             ),
         }).unwrap()).unwrap()).into_response()
@@ -129,11 +148,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let tera = Tera::new("views/*.html").unwrap();
 
     let mut se = SentenceEmbeddings::new()?;
-    for _ in 0..70 {
-        let st = Instant::now();
-        se.generate_embedding("Hello, world!".to_string())?;
-        println!("{:?}", st.elapsed());
-    }
+    //for _ in 0..70 {
+    //    let st = Instant::now();
+    //    se.generate_embedding("Hello, world!".to_string())?;
+    //    println!("{:?}", st.elapsed());
+    //}
 
     let index = SearchIndex::new().await.unwrap();
 
