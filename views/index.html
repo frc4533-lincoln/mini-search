@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<title>Mini Search</title>
+	</head>
+	<body>
+		<h1>Mini Search</h1>
+		<form>
+			<input type="search" id="search" name="q" value="{{ query }}" />
+			<input type="submit" value="Search" />
+		</form>
+		{% if time %}
+			<p>{{ time }}</p>
+
+			<hr>
+
+			{% for doc in results %}
+				<h3><a href="{{ doc.url }}">{{ doc.title }}</a></h3>
+				<p>{{ doc.snippet | safe }}</p>
+			{% endfor %}
+		{% endif %}
+	</body>
+</html>

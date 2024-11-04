@@ -1,0 +1,6 @@
+[book]
+authors = ["lxrst"]
+language = "en"
+multilingual = false
+src = "src"
+title = "Mini Search"

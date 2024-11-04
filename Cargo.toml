@@ -1,0 +1,31 @@
+[package]
+name = "mini-search"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
+
+[dependencies]
+axum = { version = "0.7.7", default-features = false, features = ["form", "http1", "json", "matched-path", "original-uri", "query", "tokio", "tower-log"] }
+candle-core = { git = "https://github.com/huggingface/candle.git", version = "0.7.2", default-features = false }
+candle-nn = { git = "https://github.com/huggingface/candle.git", version = "0.7.2", default-features = false }
+candle-transformers = { git = "https://github.com/huggingface/candle.git", version = "0.7.2", default-features = false }
+env_logger = "0.11.5"
+log = "0.4.22"
+serde = { version = "1.0.214", features = ["derive"] }
+serde_json = "1.0.132"
+spider = "2.11.8"
+tantivy = { version = "0.22.0", default-features = false, features = ["mmap", "stopwords", "zstd-compression"] }
+tera = { version = "1.20.0", default-features = false }
+tokenizers = { version = "0.20.1", features = ["onig"], default-features = false }
+tokio = { version = "1.41.0", features = ["macros", "rt-multi-thread", "signal"] }
+
+[profile.dev.package.'*']
+opt-level = 3
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true

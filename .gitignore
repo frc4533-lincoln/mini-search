@@ -1,0 +1,7 @@
+/target
+/book/book
+/mini-search-index
+/config.json
+/model.safetensors
+/tokenizer.json
+/Cargo.lock
