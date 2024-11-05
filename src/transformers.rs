@@ -5,11 +5,15 @@ use candle_nn::VarBuilder;
 use candle_transformers::models::bert::{self, BertModel};
 use tokenizers::{PaddingParams, Tokenizer};
 
-pub struct SentenceEmbeddings {
+// This code is pretty heavily based on the candle example:
+// <https://github.com/huggingface/candle/blob/530ab96036604b125276433b67ebb840e841aede/candle-examples/examples/bert/main.rs#L146C9-L205C10>
+
+/// Sentence embeddings
+pub struct SentEmbed {
     tokenizer: Tokenizer,
     bert: BertModel,
 }
-impl SentenceEmbeddings {
+impl SentEmbed {
     pub fn new() -> Result<Self, Box<dyn Error>> {
         let mut buf_model = Vec::new();
         let mut buf_config = Vec::new();
@@ -42,6 +46,9 @@ impl SentenceEmbeddings {
         Ok(Self { tokenizer, bert })
     }
 
+    /// Generate an embedding for the given sentence
+    ///
+    /// This returns a raw tensor without any conversions.
     fn gen_embedding(&mut self, sentence: String) -> Result<Tensor, Box<dyn Error>> {
         let tokens = self
             .tokenizer
@@ -53,30 +60,14 @@ impl SentenceEmbeddings {
         Ok(embeddings.get(0)?)
     }
 
-    fn gen_embeddings(&mut self, sentences: Vec<String>) -> Result<Vec<Tensor>, Box<dyn Error>> {
-        // This code is pretty much just from the candle example:
-        // <https://github.com/huggingface/candle/blob/530ab96036604b125276433b67ebb840e841aede/candle-examples/examples/bert/main.rs#L146C9-L205C10>
-
-        let tokens = self
-            .tokenizer
-            .encode_batch(sentences.to_vec(), true)
-            .expect("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
-
-        let embeddings = self.run_inference(&tokens)?;
-        let mut ret = Vec::new();
-
-        for i in 0..embeddings.elem_count() {
-            let e = embeddings.get(i)?;
-            ret.push(e);
-        }
-
-        Ok(ret)
-    }
-
+    /// Generate an embedding for the given sentence
+    ///
+    /// This converts the embedding to a [Vec] internally.
     pub fn generate_embedding(&mut self, sentence: String) -> Result<Vec<f32>, Box<dyn Error>> {
         Ok(self.gen_embedding(sentence)?.to_vec1()?)
     }
 
+    /// Run inference on some tokens
     fn run_inference(&self, tokens: &[tokenizers::Encoding]) -> Result<Tensor, Box<dyn Error>> {
         let token_ids = tokens
             .iter()

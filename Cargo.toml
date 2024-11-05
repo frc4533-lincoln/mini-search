@@ -16,7 +16,7 @@ env_logger = "0.11.5"
 log = "0.4.22"
 serde = { version = "1.0.214", features = ["derive"] }
 serde_json = "1.0.132"
-spider = "2.11.8"
+spider = { version = "2.11.20" }
 tantivy = { version = "0.22.0", default-features = false, features = ["mmap", "stopwords", "zstd-compression"] }
 tera = { version = "1.20.0", default-features = false }
 tokenizers = { version = "0.20.1", features = ["onig"], default-features = false }

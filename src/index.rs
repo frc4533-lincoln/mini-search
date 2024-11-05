@@ -1,7 +1,10 @@
 use std::{error::Error, fs::create_dir_all};
 
 use tantivy::{
-    query::QueryParser, schema::{Schema, FAST, STORED, TEXT}, store::{Compressor, ZstdCompressor}, Index, IndexReader, IndexSettings, IndexWriter, Searcher, SnippetGenerator
+    query::QueryParser,
+    schema::{Schema, FAST, STORED, TEXT},
+    store::{Compressor, ZstdCompressor},
+    Index, IndexReader, IndexSettings, IndexWriter,
 };
 use tokio::runtime::Handle as TokioRtHandle;
 
@@ -12,13 +15,14 @@ pub struct SearchIndex {
     parser: QueryParser,
 }
 impl SearchIndex {
+    /// Open the search index (or initialize it, if it doesn't already exist)
     pub async fn new() -> Result<Self, Box<dyn Error>> {
         let mut schema = Schema::builder();
 
-        let url = schema.add_text_field("url", TEXT | FAST | STORED);
+        let _url = schema.add_text_field("url", TEXT | FAST | STORED);
         let title = schema.add_text_field("title", TEXT | FAST | STORED);
         let body = schema.add_text_field("body", TEXT | FAST | STORED);
-        let embedding = schema.add_bytes_field("embedding", FAST | STORED);
+        let _embedding = schema.add_bytes_field("embedding", FAST | STORED);
 
         let schema = schema.build();
 
@@ -30,7 +34,9 @@ impl SearchIndex {
                 Index::builder()
                     .schema(schema.clone())
                     .settings(IndexSettings {
-                        docstore_compression: Compressor::Zstd(ZstdCompressor { compression_level: Some(3) }),
+                        docstore_compression: Compressor::Zstd(ZstdCompressor {
+                            compression_level: Some(3),
+                        }),
                         ..Default::default()
                     })
                     .create_in_dir("mini-search-index")

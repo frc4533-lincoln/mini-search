@@ -1,18 +1,32 @@
-use std::{error::Error, sync::Arc, time::Instant};
+use std::{
+    error::Error,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
-use axum::{extract::{Query, State}, response::{Html, IntoResponse}, routing::get, Router};
+use axum::{
+    extract::{Query, State},
+    response::{Html, IntoResponse},
+    routing::get,
+    Router,
+};
 use crawler::Crawler;
 use index::SearchIndex;
-use tantivy::{collector::TopDocs, query::QueryParser, schema::{Schema, Value}, Document, IndexReader, Searcher, SnippetGenerator, TantivyDocument};
+use spider::hashbrown::HashMap;
+use tantivy::{
+    collector::TopDocs,
+    query::QueryParser,
+    schema::{Schema, Value},
+    IndexReader, SnippetGenerator, TantivyDocument,
+};
 use tera::{Context, Tera};
 use tokio::{net::TcpListener, sync::Mutex};
-use transformers::SentenceEmbeddings;
+use transformers::SentEmbed;
 
 #[macro_use]
 extern crate log;
-#[macro_use]
-extern crate tokio;
 extern crate axum;
+extern crate tokio;
 #[macro_use]
 extern crate serde;
 extern crate candle_core;
@@ -21,8 +35,8 @@ extern crate candle_transformers;
 extern crate env_logger;
 extern crate spider;
 extern crate tantivy;
-extern crate tokenizers;
 extern crate tera;
+extern crate tokenizers;
 
 mod crawler;
 mod index;
@@ -55,14 +69,27 @@ struct MiniDoc {
     embedding: Vec<u8>,
 }
 
-async fn search(State(st): State<AppState>, Query(params): Query<SearchParams>) -> impl IntoResponse {
+async fn search(
+    State(st): State<AppState>,
+    Query(params): Query<SearchParams>,
+) -> impl IntoResponse {
     if let Some(q) = params.query {
-        let AppState { reader, parser, schema, templates, se } = st;
+        let AppState {
+            reader,
+            parser,
+            schema,
+            templates,
+            se,
+        } = st;
         let mut templates = templates.clone();
         templates.full_reload().unwrap();
 
+        let mut snippet_gen_tm = Duration::default();
+
         let total_st = Instant::now();
 
+        // Spawn a future to generate an embedding for the search query
+        // and keep the join handle for later
         let jh = {
             let se = se.clone();
             let query = q.clone();
@@ -79,34 +106,84 @@ async fn search(State(st): State<AppState>, Query(params): Query<SearchParams>) 
         let parse_tm = parse_st.elapsed();
 
         let search_st = Instant::now();
-        let results_raw = searcher.search(&query, &TopDocs::with_limit(20)).expect("search failed");
+        let results_raw = searcher
+            .search(&query, &TopDocs::with_limit(20))
+            .expect("search failed");
         let search_tm = search_st.elapsed();
 
         let mut results = Vec::new();
 
-        let snippet_gen = SnippetGenerator::create(&searcher, &query, schema.get_field("body").unwrap()).unwrap();
-        let garbage_st = Instant::now();
-        let docs_with_embeddings = results_raw.iter().map(|&(_, doc_addr)| {
-            let doc = searcher.doc::<TantivyDocument>(doc_addr).expect("couldn't get doc");
-            let embedding = doc.get_first(schema.get_field("embedding").unwrap()).unwrap().as_bytes().unwrap();
-            let embedding = unsafe {
-                std::slice::from_raw_parts(embedding.as_ptr() as *const f32, embedding.len() / 4).to_vec()
-            };
-            
-            (embedding.clone(), doc)
-        }).collect::<Vec<_>>();
-        let garbage_tm = garbage_st.elapsed();
+        // Fetch documents from the search index and extract their embeddings
+        let fetch_st = Instant::now();
+        let docs_with_embeddings: Vec<(Vec<f32>, TantivyDocument)> = results_raw
+            .iter()
+            .map(|&(_, doc_addr)| {
+                let doc = searcher
+                    .doc::<TantivyDocument>(doc_addr)
+                    .expect("couldn't get doc");
+                let embedding = doc
+                    .get_first(schema.get_field("embedding").unwrap())
+                    .unwrap()
+                    .as_bytes()
+                    .unwrap();
+                // Convert the Vec<u8> storage back to Vec<f32>
+                // This is safe, as long as the input size is a multiple of 4 bytes
+                let embedding = unsafe {
+                    std::slice::from_raw_parts(
+                        embedding.as_ptr() as *const f32,
+                        embedding.len() / 4,
+                    )
+                    .to_vec()
+                };
 
+                (embedding.clone(), doc)
+            })
+            .collect();
+        let fetch_tm = fetch_st.elapsed();
+
+        // Wait for the future to generate an embedding
         let (embedding, embedding_gen_tm) = jh.await.expect("something broke");
 
+        // Sort by cosine similarity
         let sort_st = Instant::now();
-        let scores = se.lock().await.sort_by_similarity(embedding.unwrap(), docs_with_embeddings.iter().map(|x| x.0.clone())).unwrap();
-        for &(i, score) in scores.iter().take(10) {
+        let scores = se
+            .lock()
+            .await
+            .sort_by_similarity(
+                embedding.unwrap(),
+                docs_with_embeddings.iter().map(|x| x.0.clone()),
+            )
+            .unwrap();
+        let sort_tm = sort_st.elapsed();
+
+        // Create a snippet generator
+        let mut snippet_gen_st = Instant::now();
+        let snippet_gen =
+            SnippetGenerator::create(&searcher, &query, schema.get_field("body").unwrap()).unwrap();
+        snippet_gen_tm += snippet_gen_st.elapsed();
+
+        // Get fields we need for the top 10 results and generate a snippet relevant to the search
+        // query for each
+        for &(i, _score) in scores.iter().take(10) {
             let doc = docs_with_embeddings.get(i).unwrap().1.clone();
 
-            let url = doc.get_first(schema.get_field("url").unwrap()).unwrap().as_str().unwrap().to_string();
-            let title = doc.get_first(schema.get_field("title").unwrap()).unwrap().as_str().unwrap().to_string();
+            let url = doc
+                .get_first(schema.get_field("url").unwrap())
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string();
+            let title = doc
+                .get_first(schema.get_field("title").unwrap())
+                .unwrap()
+                .as_str()
+                .unwrap()
+                .to_string();
+
+            // Generate snippet for the document
+            snippet_gen_st = Instant::now();
             let snippet = snippet_gen.snippet_from_doc(&doc).to_html();
+            snippet_gen_tm += snippet_gen_st.elapsed();
 
             results.push(Res {
                 url,
@@ -115,20 +192,22 @@ async fn search(State(st): State<AppState>, Query(params): Query<SearchParams>) 
             });
         }
 
-        let sort_tm = sort_st.elapsed();
-
         let total_tm = total_st.elapsed();
 
         Html(templates.render("index.html", &Context::from_serialize(SearchRes {
             query: q,
             results,
             time: format!(
-                "{total_tm:?} = parse({parse_tm:?}) + search({search_tm:?}) + garbage({garbage_tm:?}) + embedding({embedding_gen_tm:?}) + sort({sort_tm:?})",
-                //(parse_tm + search_tm + embedding_gen_tm + sort_tm)
+                "{total_tm:?} = parse({parse_tm:?}) + search({search_tm:?}) + fetch({fetch_tm:?}) + embedding({embedding_gen_tm:?}) + sort({sort_tm:?})",
             ),
         }).unwrap()).unwrap()).into_response()
     } else {
-        Html(st.templates.render("index.html", &Context::default()).unwrap()).into_response()
+        Html(
+            st.templates
+                .render("index.html", &Context::default())
+                .unwrap(),
+        )
+        .into_response()
     }
 }
 
@@ -137,7 +216,7 @@ struct AppState {
     reader: IndexReader,
     parser: QueryParser,
     schema: Schema,
-    se: Arc<Mutex<SentenceEmbeddings>>,
+    se: Arc<Mutex<SentEmbed>>,
     templates: Tera,
 }
 
@@ -147,16 +226,36 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let tera = Tera::new("views/*.html").unwrap();
 
-    let mut se = SentenceEmbeddings::new()?;
-    //for _ in 0..70 {
-    //    let st = Instant::now();
-    //    se.generate_embedding("Hello, world!".to_string())?;
-    //    println!("{:?}", st.elapsed());
-    //}
+    let mut se = SentEmbed::new()?;
 
     let index = SearchIndex::new().await.unwrap();
 
-    //Crawler::new(&mut se, &index).await.unwrap();
+    Crawler::new(
+        "https://docs.python.org/3.13/",
+        |url| {
+            let path = url.path();
+            path.starts_with("/3.13") ||
+                path.starts_with("/3.12") ||
+                path.starts_with("/3.8") ||
+                path.starts_with("/2.7")
+        },
+        &mut se,
+        &index,
+    )
+    .await
+    .unwrap();
+
+    Crawler::new("https://docs.ruby-lang.org/", |url| {
+        let path = url.path();
+        (path.starts_with("/en/3.3") ||
+        path.starts_with("/en/3.4") ||
+        path.starts_with("/en/master")) && !(path.ends_with("/index.html") || path.ends_with("/"))
+    }, &mut se, &index).await.unwrap();
+
+    Crawler::new("https://doc.rust-lang.org/stable/std/index.html", |url| {
+        let path = url.path();
+        path.starts_with("/stable") && !path.ends_with("/index.html") && !path.ends_with("/all.html")
+    }, &mut se, &index).await.unwrap();
 
     let r = Router::new().route("/", get(search)).with_state(AppState {
         reader: index.reader(),
