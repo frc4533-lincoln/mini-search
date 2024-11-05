@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h3>Statistics</h3>
+
+<p>Mini Search indexed a total of {{ rust_std_ct + python_ct + docs_rs_ct + ruby_ct }} pages.</p>
+
+<table>
+	<tr>
+		<th>doc.rust-lang.org</th>
+		<td>{{ rust_std_ct }} pages</td>
+	</tr>
+	<tr>
+		<th>docs.python.org</th>
+		<td>{{ python_ct }} pages</td>
+	</tr>
+	<tr>
+		<th>docs.rs</th>
+		<td>{{ docs_rs_ct }} pages</td>
+	</tr>
+	<tr>
+		<th>docs.ruby-lang.org</th>
+		<td>{{ ruby_ct }} pages</td>
+	</tr>
+</table>
+{% endblock content %}

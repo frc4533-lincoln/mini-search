@@ -9,17 +9,17 @@ use tantivy::TantivyDocument;
 
 use crate::{index::SearchIndex, transformers::SentEmbed};
 
-pub struct Crawler {}
-impl Crawler {
-    pub async fn new(
+pub async fn crawl(
         site: &str,
-        is_good_url: fn(Url) -> bool,
+        mut is_good_url: impl FnMut(Url) -> bool,
         se: &mut SentEmbed,
         index: &SearchIndex,
-    ) -> Result<Self, Box<dyn Error>> {
+    ) -> Result<usize, Box<dyn Error>> {
         let mut w = Website::new(site);
         w.with_respect_robots_txt(true);
         w.with_block_assets(true);
+        w.with_limit(10_000);
+        //w.with_limit(40);
 
         w.scrape().await;
 
@@ -70,6 +70,5 @@ impl Crawler {
             }
         }
 
-        Ok(Self {})
+        Ok(total)
     }
-}

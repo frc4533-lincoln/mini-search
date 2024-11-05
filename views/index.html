@@ -1,22 +1,6 @@
-<!DOCTYPE html>
-<html>
-	<head>
-		<title>Mini Search</title>
-		<style>
-			html {
-				font-family: sans-serif;
-			}
-			body {
-				padding: 0pt 24pt 0pt 24pt;
-			}
-			h1>a {
-				color: purple;
-				text-decoration: none;
-			}
-		</style>
-	</head>
-	<body>
-		<h1><a href="/">Mini Search</a></h1>
+{% extends "base.html" %}
+
+{% block content %}
 		<form>
 			<input type="search" id="search" name="q" value="{% if query %}{{ query }}{% endif %}" />
 			<input type="submit" value="Search" />
@@ -33,7 +17,8 @@
 		{% else %}
 			{% if query %}
 				<h3>No results found. :(</h3>
+			{% else %}
+				<p><a href="/stats">Statistics</a> | <a href="https://github.com/frc4533-lincoln/mini-search">Source code</a></p>
 			{% endif %}
 		{% endif %}
-	</body>
-</html>
+{% endblock content %}
