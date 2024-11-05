@@ -212,24 +212,25 @@ async fn search(
         #[cfg(debug_assertions)]
         templates.full_reload().unwrap();
 
-        Html(
-            templates
-                .render("index.html", &Context::default())
-                .unwrap(),
-        )
-        .into_response()
+        Html(templates.render("index.html", &Context::default()).unwrap()).into_response()
     }
 }
 
 async fn stats_page(State(st): State<AppState>) -> impl IntoResponse {
-    let AppState { templates, stats, .. } = st;
+    let AppState {
+        templates, stats, ..
+    } = st;
 
     // Reload the HTML templates for dev profile (unoptimized build)
     let mut templates = templates.clone();
     #[cfg(debug_assertions)]
     templates.full_reload().unwrap();
 
-    Html(templates.render("stats.html", &Context::from_serialize(stats).unwrap()).unwrap())
+    Html(
+        templates
+            .render("stats.html", &Context::from_serialize(stats).unwrap())
+            .unwrap(),
+    )
 }
 
 #[derive(Clone)]
@@ -256,27 +257,42 @@ async fn run_crawl(se: &mut SentEmbed, index: &SearchIndex) -> Result<CrawlStats
         "https://docs.python.org/3.13/",
         |url| {
             let path = url.path();
-            path.starts_with("/3.13") ||
-                path.starts_with("/3.12") ||
-                path.starts_with("/3.8") ||
-                path.starts_with("/2.7")
+            path.starts_with("/3.13")
+                || path.starts_with("/3.12")
+                || path.starts_with("/3.8")
+                || path.starts_with("/2.7")
         },
         se,
         &index,
     )
     .await?;
 
-    let ruby_ct = crawl("https://docs.ruby-lang.org/", |url| {
-        let path = url.path();
-        (path.starts_with("/en/3.3") ||
-        path.starts_with("/en/3.4") ||
-        path.starts_with("/en/master")) && !(path.ends_with("/index.html") || path.ends_with("/"))
-    }, se, &index).await?;
+    let ruby_ct = crawl(
+        "https://docs.ruby-lang.org/",
+        |url| {
+            let path = url.path();
+            (path.starts_with("/en/3.3")
+                || path.starts_with("/en/3.4")
+                || path.starts_with("/en/master"))
+                && !(path.ends_with("/index.html") || path.ends_with("/"))
+        },
+        se,
+        &index,
+    )
+    .await?;
 
-    let rust_std_ct = crawl("https://doc.rust-lang.org/stable/std/index.html", |url| {
-        let path = url.path();
-        path.starts_with("/stable") && !path.ends_with("/index.html") && !path.ends_with("/all.html")
-    }, se, &index).await?;
+    let rust_std_ct = crawl(
+        "https://doc.rust-lang.org/stable/std/index.html",
+        |url| {
+            let path = url.path();
+            path.starts_with("/stable")
+                && !path.ends_with("/index.html")
+                && !path.ends_with("/all.html")
+        },
+        se,
+        &index,
+    )
+    .await?;
 
     let mut docs_rs_ct = 0usize;
     for (name, version) in [
@@ -295,11 +311,19 @@ async fn run_crawl(se: &mut SentEmbed, index: &SearchIndex) -> Result<CrawlStats
         ("fend_core", "1.5.3"),
         ("pnet", "0.35.0"),
     ] {
-    let base_path = format!("/{name}/{version}/{name}");
-    docs_rs_ct += crawl(&format!("https://docs.rs{base_path}/index.html"), |url| {
-        let path = url.path();
-        path.starts_with(&base_path) && !path.ends_with("/index.html") && !path.ends_with("/all.html")
-    }, se, &index).await?;
+        let base_path = format!("/{name}/{version}/{name}");
+        docs_rs_ct += crawl(
+            &format!("https://docs.rs{base_path}/index.html"),
+            |url| {
+                let path = url.path();
+                path.starts_with(&base_path)
+                    && !path.ends_with("/index.html")
+                    && !path.ends_with("/all.html")
+            },
+            se,
+            &index,
+        )
+        .await?;
     }
 
     Ok(CrawlStats {
@@ -309,7 +333,6 @@ async fn run_crawl(se: &mut SentEmbed, index: &SearchIndex) -> Result<CrawlStats
         docs_rs_ct,
     })
 }
-
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -323,14 +346,17 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let stats = run_crawl(&mut se, &index).await?;
 
-    let r = Router::new().route("/", get(search)).route("/stats", get(stats_page)).with_state(AppState {
-        reader: index.reader(),
-        parser: index.query_parser(),
-        schema: index.schema(),
-        se: Arc::new(Mutex::new(se)),
-        templates: tera,
-        stats,
-    });
+    let r = Router::new()
+        .route("/", get(search))
+        .route("/stats", get(stats_page))
+        .with_state(AppState {
+            reader: index.reader(),
+            parser: index.query_parser(),
+            schema: index.schema(),
+            se: Arc::new(Mutex::new(se)),
+            templates: tera,
+            stats,
+        });
 
     let srv = axum::serve(
         TcpListener::bind("0.0.0.0:8080").await?,
