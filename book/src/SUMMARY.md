@@ -1,1 +1,3 @@
 - [Installation](./install.md)
+- [Learning experiences](./learning_experiences.md)
+- [Optimizing relevancy](./optimizing_relevancy.md)
