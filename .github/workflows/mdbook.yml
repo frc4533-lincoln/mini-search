@@ -1,0 +1,49 @@
+name: Deploy docs
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: read
+  statuses: read
+  deployments: write
+  packages: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-22.04
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install rust nightly
+        run: rustup update nightly && rustup default nightly
+
+      - name: Setup mdBook
+        uses: peaceiris/actions-mdbook@v2
+        with:
+          mdbook-version: 'latest'
+
+      - run: mdbook build ./book
+
+      - name: Run rustdoc
+        run: cargo doc --workspace --document-private-items --no-deps
+
+      - name: Copy rustdoc
+        run: mv target/doc book/book
+
+      - name: Upload to pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./book/book
+
+      - name: Deploy to pages
+        uses: actions/deploy-pages@v4
